@@ -37,10 +37,15 @@ func main() {
 // extract and transform the source database into
 // the destination database
 type Config struct {
-	PSource      map[string]string
-	PDestination map[string]string
-	MatchingIds  []int    `yaml:"matchingIds"`
-	TargetTables []string `yaml:"targetTables"`
+	PSource           map[string]string
+	PDestination      map[string]string
+	MSource           map[string]string
+	MDestination      map[string]string
+	MSourceHosts      []string `yaml:"mSourceHosts"`
+	mDestinationHosts []string `yaml:"mDestinationHosts"`
+	MatchingIds       []int    `yaml:"matchingIds"`
+	TargetTables      []string `yaml:"targetTables"`
+	TargetCollections []string `yaml:"targetCollections"`
 }
 
 // Table is an SQL table
@@ -249,6 +254,7 @@ func ExtractTable(ids []int, table Table, source, destination *sql.DB, comm chan
 		}
 
 		scanner := newSliceScan(table.Columns)
+		transaction, _ := destination.Begin()
 
 		for rows.Next() {
 			err = scanner.Update(rows)
@@ -257,14 +263,16 @@ func ExtractTable(ids []int, table Table, source, destination *sql.DB, comm chan
 			}
 
 			query = table.FormatInsert(scanner.Get())
-			_, err = destination.Exec(query)
+			_, err = transaction.Exec(query)
 			if err != nil {
 				log.Println("240: ", err)
 			}
 		}
+
+		transaction.Commit()
 	}
 
 	table.Extracted = true
 	comm <- table
-	log.Printf("*** Finished extracting table %s", table.Name)
+	log.Printf("*** Finished extracting table %s ***", table.Name)
 }
