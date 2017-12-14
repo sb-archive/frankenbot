@@ -1,0 +1,48 @@
+psource:
+  name: springbot_development
+  host: /var/run/postgresql
+  port: 5432
+  username: corwin
+  password:
+
+pdestination:
+  name: destination
+  host: /var/run/postgresql
+  port: 5432
+  username: corwin
+  password:
+
+msource:
+  name: springbot_dev
+  username: corwin
+  password:
+
+mSourceHosts:
+  - localhost:27017
+
+mdestination:
+  name: destination
+  username: corwin
+  password:
+
+mDestinationHosts:
+  - localhost:27017
+
+matchingIds:
+  - 77
+
+targetTables:
+  - product_query_values
+  - triggered_emails
+  - daily_query_values
+  - actions
+  - action_query_values
+
+targetCollections:
+  - customers
+  - products
+  - purchases
+
+filters:
+  customers:
+    email: filtered@example.com
