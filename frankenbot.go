@@ -83,57 +83,6 @@ func (t *Table) FormatInsert(values []string, tableFilters map[string]map[string
 	}
 
 	return slice
-	// // insert := fmt.Sprintf(`INSERT INTO %s(`, t.Name)
-
-	// // insert += t.Columns[0]
-	// // for _, column := range t.Columns[1:] {
-	// // 	insert += fmt.Sprintf(",%s", column)
-	// // }
-
-	// // insert += fmt.Sprintf(") VALUES (%s", values[0])
-
-	// buildValues := func(insert string, filters map[string]string) string {
-	// 	for i := 1; i <= len(values[1:]); i++ {
-	// 		var value string
-
-	// 		if replacement, ok := filters[t.Columns[i]]; ok {
-	// 			value = replacement
-	// 		} else {
-	// 			value = values[i]
-	// 		}
-
-	// 		if value == "" {
-	// 			if strings.HasPrefix(t.DatabaseTypes[i], "_") {
-	// 				insert += ",'{}'"
-	// 			} else {
-	// 				insert += ",null"
-	// 			}
-	// 		} else if t.DatabaseTypes[i] == "DATE" {
-	// 			insert += fmt.Sprintf(",DATE '%s'", value)
-	// 		} else if strings.HasPrefix(t.DatabaseTypes[i], "_") && value != "" {
-	// 			insert += fmt.Sprintf(",'%s'", value)
-	// 		} else if t.DatabaseTypes[i] == "VARCHAR" || t.DatabaseTypes[i] == "TEXT" {
-	// 			replacer := strings.NewReplacer("'", "''")
-	// 			insert += fmt.Sprintf(",'%s'", replacer.Replace(value))
-	// 		} else if t.DatabaseTypes[i] == "TIMESTAMP" {
-	// 			insert += fmt.Sprintf(",'%s'::timestamp", value)
-	// 		} else {
-	// 			insert += fmt.Sprintf(",%s", value)
-	// 		}
-	// 	}
-
-	// 	return insert
-	// }
-
-	// if filters, ok := tableFilters[t.Name]; ok {
-	// 	insert = buildValues(insert, filters)
-	// } else {
-	// 	insert = buildValues(insert, filters)
-	// }
-
-	// insert += ")"
-
-	// return insert
 }
 
 type sliceScan struct {
@@ -331,9 +280,6 @@ func ExtractTable(id int, table *Table, filters map[string]map[string]string, si
 			log.Println("234: ", err)
 		}
 
-		// query = table.FormatInsert(scanner.Get(), filters)
-
-		// _, err = transaction.Exec(query)
 		t := table.FormatInsert(scanner.Get(), filters)
 		_, err = stmt.Exec(t...)
 		if err != nil {

@@ -27,7 +27,7 @@ func main() {
 	done := make(chan bool)
 
 	go ExtractPostgres(config, done)
-	// go ExtractMongo(config, done)
+	go ExtractMongo(config, done)
 
 	for {
 		select {
