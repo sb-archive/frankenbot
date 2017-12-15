@@ -6,37 +6,15 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"os"
 	"strings"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
-	"gopkg.in/yaml.v2"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		log.Fatal("Frankenbot needs a config file to lurch to life")
-	}
-
-	configFile := os.Args[1]
-	configData, err := ioutil.ReadFile(configFile)
-
-	if err != nil {
-		log.Fatal("Line 26: ", err)
-	}
-
-	var config Config
-	yaml.Unmarshal(configData, &config)
-
-	// ExtractPostgres(config)
-	ExtractMongo(config)
-}
-
-// Config for how the Frankenbot should
+// Config instructs how the frankenbot should
 // extract and transform the source database into
 // the destination database
 type Config struct {
@@ -50,6 +28,7 @@ type Config struct {
 	TargetTables      []string `yaml:"targetTables"`
 	TargetCollections []string `yaml:"targetCollections"`
 	Filters           map[string]map[string]string
+	Since             map[string]map[string]string
 }
 
 // Table is an SQL table
@@ -64,7 +43,7 @@ type Table struct {
 // be used to create an SQL table
 func (t *Table) FormatCreate() string {
 	create := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		id INT4 PRIMARY KEY DEFAULT nextval('%s_id_seq'::regClass)`,
+		id BIGINT PRIMARY KEY DEFAULT nextval('%s_id_seq'::regClass)`,
 		t.Name, t.Name)
 
 	for i := 1; i < len(t.Columns); i++ {
@@ -78,58 +57,83 @@ func (t *Table) FormatCreate() string {
 
 // FormatInsert create a string suitable to
 // be used to insert into its SQL table
-func (t *Table) FormatInsert(values []string, tableFilters map[string]map[string]string) string {
-	insert := fmt.Sprintf(`INSERT INTO %s(`, t.Name)
+func (t *Table) FormatInsert(values []string, tableFilters map[string]map[string]string) []interface{} {
+	slice := make([]interface{}, len(values))
 
-	insert += t.Columns[0]
-	for _, column := range t.Columns[1:] {
-		insert += fmt.Sprintf(",%s", column)
-	}
+	for i, v := range values {
+		var value string
 
-	insert += fmt.Sprintf(") VALUES (%s", values[0])
-
-	buildValues := func(insert string, filters map[string]string) string {
-		for i := 1; i <= len(values[1:]); i++ {
-			var value string
-
-			if replacement, ok := filters[t.Columns[i]]; ok {
-				value = replacement
-			} else {
-				value = values[i]
-			}
-
-			if value == "" {
-				if strings.HasPrefix(t.DatabaseTypes[i], "_") {
-					insert += ",'{}'"
-				} else {
-					insert += ",null"
-				}
-			} else if t.DatabaseTypes[i] == "DATE" {
-				insert += fmt.Sprintf(",DATE '%s'", value)
-			} else if strings.HasPrefix(t.DatabaseTypes[i], "_") && value != "" {
-				insert += fmt.Sprintf(",'%s'", value)
-			} else if t.DatabaseTypes[i] == "VARCHAR" || t.DatabaseTypes[i] == "TEXT" {
-				replacer := strings.NewReplacer("'", "''")
-				insert += fmt.Sprintf(",'%s'", replacer.Replace(value))
-			} else if t.DatabaseTypes[i] == "TIMESTAMP" {
-				insert += fmt.Sprintf(",'%s'::timestamp", value)
-			} else {
-				insert += fmt.Sprintf(",%s", value)
-			}
+		if replacement, ok := tableFilters[t.Name][t.Columns[i]]; ok {
+			value = replacement
+		} else {
+			value = v
 		}
 
-		return insert
+		if value == "" {
+			if strings.HasPrefix(t.DatabaseTypes[i], "_") {
+				slice[i] = "{}"
+			} else {
+				slice[i] = nil
+			}
+		} else if t.DatabaseTypes[i] == "VARCHAR" || t.DatabaseTypes[i] == "TEXT" {
+			slice[i] = fmt.Sprintf("'%s'", strings.Replace(value, "'", "''", -1))
+		} else {
+			slice[i] = value
+		}
 	}
 
-	if filters, ok := tableFilters[t.Name]; ok {
-		insert += buildValues(insert, filters)
-	} else {
-		insert += buildValues(insert, filters)
-	}
+	return slice
+	// // insert := fmt.Sprintf(`INSERT INTO %s(`, t.Name)
 
-	insert += ")"
+	// // insert += t.Columns[0]
+	// // for _, column := range t.Columns[1:] {
+	// // 	insert += fmt.Sprintf(",%s", column)
+	// // }
 
-	return insert
+	// // insert += fmt.Sprintf(") VALUES (%s", values[0])
+
+	// buildValues := func(insert string, filters map[string]string) string {
+	// 	for i := 1; i <= len(values[1:]); i++ {
+	// 		var value string
+
+	// 		if replacement, ok := filters[t.Columns[i]]; ok {
+	// 			value = replacement
+	// 		} else {
+	// 			value = values[i]
+	// 		}
+
+	// 		if value == "" {
+	// 			if strings.HasPrefix(t.DatabaseTypes[i], "_") {
+	// 				insert += ",'{}'"
+	// 			} else {
+	// 				insert += ",null"
+	// 			}
+	// 		} else if t.DatabaseTypes[i] == "DATE" {
+	// 			insert += fmt.Sprintf(",DATE '%s'", value)
+	// 		} else if strings.HasPrefix(t.DatabaseTypes[i], "_") && value != "" {
+	// 			insert += fmt.Sprintf(",'%s'", value)
+	// 		} else if t.DatabaseTypes[i] == "VARCHAR" || t.DatabaseTypes[i] == "TEXT" {
+	// 			replacer := strings.NewReplacer("'", "''")
+	// 			insert += fmt.Sprintf(",'%s'", replacer.Replace(value))
+	// 		} else if t.DatabaseTypes[i] == "TIMESTAMP" {
+	// 			insert += fmt.Sprintf(",'%s'::timestamp", value)
+	// 		} else {
+	// 			insert += fmt.Sprintf(",%s", value)
+	// 		}
+	// 	}
+
+	// 	return insert
+	// }
+
+	// if filters, ok := tableFilters[t.Name]; ok {
+	// 	insert = buildValues(insert, filters)
+	// } else {
+	// 	insert = buildValues(insert, filters)
+	// }
+
+	// insert += ")"
+
+	// return insert
 }
 
 type sliceScan struct {
@@ -178,7 +182,7 @@ func (s sliceScan) Get() []string {
 // ExtractPostgres is the main entry point for frankenbot.
 // It takes in a Config and kicks in concurrent workers
 // for the entire process
-func ExtractPostgres(config Config) {
+func ExtractPostgres(config Config, done chan bool) {
 	pSourceConnStr := fmt.Sprintf("dbname=%s user=%s password=%s host=%s port=%s",
 		config.PSource["name"], config.PSource["username"], config.PSource["password"],
 		config.PSource["host"], config.PSource["port"])
@@ -196,30 +200,23 @@ func ExtractPostgres(config Config) {
 		log.Fatal("151: ", err)
 	}
 
-	comm := make(chan *Table)
+	comm := make(chan bool)
 	var progress int
 
-	for _, id := range config.MatchingIds {
-		log.Printf("*** Extracting tables for store %v ***", id)
-
-		go MakeTable("stores", id, pSourceDB, pDestinationDB, comm)
-		for _, name := range config.TargetTables {
-			go MakeTable(name, id, pSourceDB, pDestinationDB, comm)
-		}
+	go MakeTable("stores", config, pSourceDB, pDestinationDB, comm)
+	for _, name := range config.TargetTables {
+		go MakeTable(name, config, pSourceDB, pDestinationDB, comm)
 	}
 
 	for {
 		select {
-		case table := <-comm:
-			if table.Extracted {
-				progress++
-				log.Printf("*** Postgres Progress: %v out of %v ***", progress, len(config.TargetTables)+1)
+		case <-comm:
+			progress++
+			log.Printf("*** Postgres Progress: %v out of %v ***", progress, (len(config.TargetTables)+1)*len(config.MatchingIds))
 
-				if progress == len(config.TargetTables)+1 {
-					return
-				}
-			} else {
-				go ExtractTable(config.MatchingIds, table, config.Filters, pSourceDB, pDestinationDB, comm)
+			if progress == (len(config.TargetTables)+1)*len(config.MatchingIds)+1 {
+				done <- true
+				return
 			}
 		}
 	}
@@ -227,7 +224,7 @@ func ExtractPostgres(config Config) {
 
 // MakeTable creates SQL tables and passes the table
 // back along the provided channel
-func MakeTable(name string, id int, source, destination *sql.DB, comm chan *Table) {
+func MakeTable(name string, config Config, source, destination *sql.DB, comm chan bool) {
 	query := fmt.Sprintf("SELECT * FROM %s LIMIT 1", name)
 	rows, err := source.Query(query)
 	if err != nil {
@@ -250,7 +247,7 @@ func MakeTable(name string, id int, source, destination *sql.DB, comm chan *Tabl
 	}
 
 	query = table.FormatCreate()
-	log.Printf("*** Making table %s ***", name)
+	log.Printf("Making table %s", name)
 	_, err = destination.Exec(query)
 	if err != nil {
 		log.Fatal("206: ", err)
@@ -280,14 +277,14 @@ func MakeTable(name string, id int, source, destination *sql.DB, comm chan *Tabl
 		}
 	}
 
-	comm <- table
+	for _, id := range config.MatchingIds {
+		go ExtractTable(id, table, config.Filters, config.Since, source, destination, comm)
+	}
 }
 
 // ExtractTable does the heavy lifting of actually
 // extracting data from on databaase into another
-func ExtractTable(ids []int, table *Table, filters map[string]map[string]string, source, destination *sql.DB, comm chan *Table) {
-	log.Printf("*** Extracting table %s ***", table.Name)
-
+func ExtractTable(id int, table *Table, filters map[string]map[string]string, since map[string]map[string]string, source, destination *sql.DB, comm chan bool) {
 	var key string
 	if table.Name == "stores" {
 		key = "id"
@@ -295,40 +292,75 @@ func ExtractTable(ids []int, table *Table, filters map[string]map[string]string,
 		key = "store_id"
 	}
 
-	for _, id := range ids {
-		query := fmt.Sprintf("SELECT * FROM %s WHERE %s = %v", table.Name, key, id)
-		rows, err := source.Query(query)
-		if err != nil {
-			log.Println("226: ", err)
+	var count int
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s = %v", table.Name, key, id)
+	if sinceMap, ok := since[table.Name]; ok {
+		for col, date := range sinceMap {
+			countQuery += fmt.Sprintf(" AND %s >= DATE '%s'", col, date)
 		}
-
-		scanner := newSliceScan(table.Columns)
-		transaction, _ := destination.Begin()
-
-		for rows.Next() {
-			err = scanner.Update(rows)
-			if err != nil {
-				log.Println("234: ", err)
-			}
-
-			query = table.FormatInsert(scanner.Get(), filters)
-			_, err = transaction.Exec(query)
-			if err != nil {
-				log.Println("240: ", err)
-			}
-		}
-
-		transaction.Commit()
+	}
+	err := source.QueryRow(countQuery).Scan(&count)
+	if err != nil {
+		log.Println("308: ", err)
 	}
 
-	table.Extracted = true
-	comm <- table
-	log.Printf("*** Finished extracting table %s ***", table.Name)
+	log.Printf("Extracting %s for store %v, %v rows found", table.Name, id, count)
+
+	query := fmt.Sprintf("SELECT * FROM %s WHERE %s = %v", table.Name, key, id)
+	if sinceMap, ok := since[table.Name]; ok {
+		for col, date := range sinceMap {
+			query += fmt.Sprintf(" AND %s >= DATE '%s'", col, date)
+		}
+	}
+
+	rows, err := source.Query(query)
+	if err != nil {
+		log.Println("226: ", err)
+	}
+
+	transaction, _ := destination.Begin()
+	scanner := newSliceScan(table.Columns)
+	stmt, err := transaction.Prepare(pq.CopyIn(table.Name, table.Columns...))
+	if err != nil {
+		log.Println("295: ", err)
+	}
+
+	for rows.Next() {
+		err = scanner.Update(rows)
+		if err != nil {
+			log.Println("234: ", err)
+		}
+
+		// query = table.FormatInsert(scanner.Get(), filters)
+
+		// _, err = transaction.Exec(query)
+		t := table.FormatInsert(scanner.Get(), filters)
+		_, err = stmt.Exec(t...)
+		if err != nil {
+			log.Println("240: ", err)
+		}
+	}
+
+	_, err = stmt.Exec()
+	if err != nil {
+		log.Println("315: ", err)
+	}
+
+	stmt.Close()
+
+	err = transaction.Commit()
+	if err != nil {
+		log.Println("322: ", err)
+	}
+
+	log.Printf("*** Finished extracting %s for store %v ***", table.Name, id)
+
+	comm <- true
 }
 
 // ExtractMongo performs similarly to ExtractPostgres, just
 // for MongoDB
-func ExtractMongo(config Config) {
+func ExtractMongo(config Config, done chan bool) {
 	sourceConnStr := fmt.Sprintf(`mongodb://%s:%s@`, config.MSource["username"], config.MSource["password"])
 	sourceConnStr += config.MSourceHosts[0]
 	for _, host := range config.MSourceHosts[1:] {
@@ -364,19 +396,26 @@ func ExtractMongo(config Config) {
 		log.Printf("*** Extracting collections for store %v ***", id)
 
 		for _, collection := range config.TargetCollections {
-			log.Printf("*** Extracting %s for store %v ***", collection, id)
+			log.Printf("Extracting %s for store %v", collection, id)
 
-			go ExtractCollection(collection, id, config.Filters, sourceDB, destinationDB, comm)
+			go ExtractCollection(collection, id, config.Filters, config.Since, sourceDB, destinationDB, comm)
 		}
+	}
+
+	for _, collection := range config.TargetCollections {
+		log.Printf("Ensuring indexes for %s", collection)
+
+		go EnsureIndex(collection, sourceDB, destinationDB)
 	}
 
 	for {
 		select {
 		case <-comm:
 			progress++
-			log.Printf("*** Mongo Progress: %v out of %v ***", progress, len(config.TargetCollections))
+			log.Printf("*** Mongo Progress: %v out of %v ***", progress, len(config.TargetCollections)*len(config.MatchingIds))
 
-			if progress >= len(config.TargetCollections) {
+			if progress >= len(config.TargetCollections)*len(config.MatchingIds) {
+				done <- true
 				return
 			}
 		}
@@ -384,11 +423,19 @@ func ExtractMongo(config Config) {
 }
 
 // ExtractCollection extracts mongodb collections
-func ExtractCollection(collection string, id int, collectionFilters map[string]map[string]string, source, destination *mgo.Database, comm chan bool) {
+func ExtractCollection(collection string, id int, collectionFilters map[string]map[string]string, since map[string]map[string]string, source, destination *mgo.Database, done chan bool) {
 	sourceCollection := source.C(collection)
 	destinationCollection := destination.C(collection)
-	iter := sourceCollection.Find(bson.M{"store_id": id}).Iter()
 	doc := &bson.D{}
+
+	query := bson.M{"store_id": id}
+	if sinceMap, ok := since[collection]; ok {
+		for field, date := range sinceMap {
+			query[field] = bson.M{"gte": date}
+		}
+	}
+
+	iter := sourceCollection.Find(query).Iter()
 
 	for iter.Next(doc) {
 		if filters, ok := collectionFilters[collection]; ok {
@@ -404,14 +451,20 @@ func ExtractCollection(collection string, id int, collectionFilters map[string]m
 		}
 	}
 
-	indexes, err := sourceCollection.Indexes()
+	log.Printf("*** Finished extracting %s for store %v ***", collection, id)
+	done <- true
+}
+
+// EnsureIndex creates indexes for mongo collections
+func EnsureIndex(collection string, source, destination *mgo.Database) {
+	sCollection := source.C(collection)
+	dCollection := destination.C(collection)
+
+	indexes, err := sCollection.Indexes()
 	if err != nil {
 		log.Println("377: ", err)
 	}
 	for _, index := range indexes {
-		destinationCollection.EnsureIndex(index)
+		dCollection.EnsureIndex(index)
 	}
-
-	log.Printf("*** Finished extracting %s for store %v ***", collection, id)
-	comm <- true
 }
