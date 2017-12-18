@@ -2,7 +2,7 @@ psource:
   name: springbot_development
   host: localhost
   port: 5432
-  username: corwin
+  username: www
   password:
 
 pdestination:
@@ -10,10 +10,10 @@ pdestination:
   host: /var/run/postgresql
   port: 5432
   username: corwin
-  password: Derelict@2827
+  password:
 
 msource:
-  name: springbot_dev
+  name: www
   username: corwin
   password:
 

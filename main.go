@@ -1,9 +1,13 @@
+// Package frankenbot provides Springbot data extraction,
+// transformation, and transferring from a source
+// database to a destination database
 package main
 
 import (
 	"io/ioutil"
 	"log"
 	"os"
+	"sync"
 
 	"gopkg.in/yaml.v2"
 )
@@ -23,20 +27,9 @@ func main() {
 	var config Config
 	yaml.Unmarshal(configData, &config)
 
-	var progress int
-	done := make(chan bool)
-
-	go ExtractPostgres(config, done)
-	go ExtractMongo(config, done)
-
-	for {
-		select {
-		case <-done:
-			progress++
-
-			if progress >= 2 {
-				return
-			}
-		}
-	}
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+	go ExtractPostgres(config, wg)
+	go ExtractMongo(config, wg)
+	wg.Wait()
 }
