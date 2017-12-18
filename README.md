@@ -8,6 +8,9 @@ Once you have that, all you need to do is:
 ```
 git clone git@github.com:serracorwin/frankenbot.git
 cd frankenbot
+rake db:drop
+rake db:create
+rake db:schema:load
 go run *.go /path/to/config.yml
 ```
 
